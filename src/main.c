@@ -1,67 +1,56 @@
 
 #include <stdio.h>
 
-#include "driver/gpio.h"
-#include "esp_err.h"
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 
-#define LED_PIN GPIO_NUM_18
+QueueHandle_t data_queue;
 
-void led_task(void *pvParameters)
+void producer_task(void *pvParameters)
 {
+    int sensor_value = 0;
+
     while (1)
     {
-        gpio_set_level(LED_PIN, 1);
-        printf("[LED TASK] LED ON\n");
+        sensor_value += 10;
 
-        vTaskDelay(pdMS_TO_TICKS(500));
+        if (xQueueSend(data_queue, &sensor_value, 0) == pdPASS)
+        {
+            printf("[PRODUCER] Sent: %d\n", sensor_value);
+        }
+        else
+        {
+            printf("[PRODUCER] Queue full!\n");
+        }
 
-        gpio_set_level(LED_PIN, 0);
-        printf("[LED TASK] LED OFF\n");
-
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
-void monitor_task(void *pvParameters)
+void consumer_task(void *pvParameters)
 {
+    int received_value;
+
     while (1)
     {
-        printf("[MONITOR TASK] System is running...\n");
-
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        if (xQueueReceive(data_queue, &received_value, portMAX_DELAY) == pdPASS)
+        {
+            printf("[CONSUMER] Received: %d\n", received_value);
+        }
     }
 }
 
 void app_main(void)
 {
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << LED_PIN),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
+    data_queue = xQueueCreate(5, sizeof(int));
 
-    ESP_ERROR_CHECK(gpio_config(&io_conf));
+    if (data_queue == NULL)
+    {
+        printf("Queue creation failed!\n");
+        return;
+    }
 
-    xTaskCreate(
-        led_task,
-        "LED_Task",
-        2048,
-        NULL,
-        2,// task with priority 2 will run before task with priority 1
-        NULL
-    );
-
-    xTaskCreate(
-        monitor_task,
-        "Monitor_Task",
-        2048,
-        NULL,
-        1,//low priority task
-        NULL
-    );
+    xTaskCreate(producer_task, "Producer", 2048, NULL, 2, NULL);
+    xTaskCreate(consumer_task, "Consumer", 2048, NULL, 2, NULL);
 }
