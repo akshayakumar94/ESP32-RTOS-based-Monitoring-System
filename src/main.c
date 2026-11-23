@@ -3,54 +3,54 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/queue.h"
+#include "freertos/semphr.h"
 
-QueueHandle_t data_queue;
+SemaphoreHandle_t serial_mutex;
 
-void producer_task(void *pvParameters)
+void task_one(void *pvParameters)
 {
-    int sensor_value = 0;
-
     while (1)
     {
-        sensor_value += 10;
+        if (xSemaphoreTake(serial_mutex, portMAX_DELAY) == pdTRUE)
+        {
+            printf("\n[TASK 1] Starting operation\n");
+            vTaskDelay(pdMS_TO_TICKS(500));
+            printf("[TASK 1] Operation completed\n");
 
-        if (xQueueSend(data_queue, &sensor_value, 0) == pdPASS)
-        {
-            printf("[PRODUCER] Sent: %d\n", sensor_value);
-        }
-        else
-        {
-            printf("[PRODUCER] Queue full!\n");
+            xSemaphoreGive(serial_mutex);
         }
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
-void consumer_task(void *pvParameters)
+void task_two(void *pvParameters)
 {
-    int received_value;
-
     while (1)
     {
-        if (xQueueReceive(data_queue, &received_value, portMAX_DELAY) == pdPASS)
+        if (xSemaphoreTake(serial_mutex, portMAX_DELAY) == pdTRUE)
         {
-            printf("[CONSUMER] Received: %d\n", received_value);
+            printf("\n[TASK 2] Starting operation\n");
+            vTaskDelay(pdMS_TO_TICKS(500));
+            printf("[TASK 2] Operation completed\n");
+
+            xSemaphoreGive(serial_mutex);
         }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
 void app_main(void)
 {
-    data_queue = xQueueCreate(5, sizeof(int));
+    serial_mutex = xSemaphoreCreateMutex();
 
-    if (data_queue == NULL)
+    if (serial_mutex == NULL)
     {
-        printf("Queue creation failed!\n");
+        printf("Mutex creation failed!\n");
         return;
     }
 
-    xTaskCreate(producer_task, "Producer", 2048, NULL, 2, NULL);
-    xTaskCreate(consumer_task, "Consumer", 2048, NULL, 2, NULL);
+    xTaskCreate(task_one, "Task_One", 2048, NULL, 2, NULL);
+    xTaskCreate(task_two, "Task_Two", 2048, NULL, 2, NULL);
 }
